@@ -69,8 +69,21 @@ CATEGORIAS = [
     "salud", "educacion", "ropa", "tecnologia", "hogar", "otros"
 ]
 
-def get_dollar_rate(save_to_file=True):
-    """Obtiene el tipo de cambio del dólar oficial desde la API y lo guarda automáticamente"""
+def get_dollar_rate(save_to_file=True, force_api=False):
+    """Obtiene el tipo de cambio del dólar oficial desde la API y lo guarda automáticamente
+    
+    Args:
+        save_to_file: Si True, guarda la tasa en el archivo
+        force_api: Si True, siempre consulta la API. Si False, primero verifica si ya hay tasa guardada para hoy
+    """
+    date_key = get_date_key()
+    tasas = load_tasas()
+    
+    # Si no se fuerza la API y ya existe una tasa guardada para hoy, usarla
+    if not force_api and date_key in tasas and "oficial" in tasas[date_key]:
+        return tasas[date_key]["oficial"]
+    
+    # Consultar la API
     try:
         response = requests.get("https://ve.dolarapi.com/v1/dolares/oficial", timeout=5)
         response.raise_for_status()
@@ -78,23 +91,40 @@ def get_dollar_rate(save_to_file=True):
         rate = data.get("promedio") or data.get("venta") or data.get("compra")
         if rate:
             rate_float = float(rate)
-            # Guardar automáticamente la tasa del día
+            # Guardar automáticamente la tasa del día (usando fecha del sistema, no la de la API)
             if save_to_file:
-                date_key = get_date_key()
-                tasas = load_tasas()
                 if date_key not in tasas:
                     tasas[date_key] = {}
-                tasas[date_key]["oficial"] = rate_float
-                tasas[date_key]["oficial_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                save_tasas(tasas)
+                # Solo actualizar si no existe o si se fuerza la actualización
+                if date_key not in tasas or "oficial" not in tasas[date_key] or force_api:
+                    tasas[date_key]["oficial"] = rate_float
+                    tasas[date_key]["oficial_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    save_tasas(tasas)
             return rate_float
         return None
     except Exception as e:
         print(f"Error al obtener tipo de cambio: {e}")
+        # Si falla la API pero hay tasa guardada para hoy, usarla
+        if date_key in tasas and "oficial" in tasas[date_key]:
+            print(f"Usando tasa guardada para hoy: {tasas[date_key]['oficial']}")
+            return tasas[date_key]["oficial"]
         return None
 
-def get_parallel_rate(save_to_file=True):
-    """Obtiene el tipo de cambio paralelo (Binance/USDT) desde la API y lo guarda automáticamente"""
+def get_parallel_rate(save_to_file=True, force_api=False):
+    """Obtiene el tipo de cambio paralelo (Binance/USDT) desde la API y lo guarda automáticamente
+    
+    Args:
+        save_to_file: Si True, guarda la tasa en el archivo
+        force_api: Si True, siempre consulta la API. Si False, primero verifica si ya hay tasa guardada para hoy
+    """
+    date_key = get_date_key()
+    tasas = load_tasas()
+    
+    # Si no se fuerza la API y ya existe una tasa guardada para hoy, usarla
+    if not force_api and date_key in tasas and "paralela" in tasas[date_key]:
+        return tasas[date_key]["paralela"]
+    
+    # Consultar la API
     try:
         response = requests.get("https://ve.dolarapi.com/v1/dolares/paralelo", timeout=5)
         response.raise_for_status()
@@ -102,19 +132,23 @@ def get_parallel_rate(save_to_file=True):
         rate = data.get("promedio") or data.get("venta") or data.get("compra")
         if rate:
             rate_float = float(rate)
-            # Guardar automáticamente la tasa del día
+            # Guardar automáticamente la tasa del día (usando fecha del sistema, no la de la API)
             if save_to_file:
-                date_key = get_date_key()
-                tasas = load_tasas()
                 if date_key not in tasas:
                     tasas[date_key] = {}
-                tasas[date_key]["paralela"] = rate_float
-                tasas[date_key]["paralela_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                save_tasas(tasas)
+                # Solo actualizar si no existe o si se fuerza la actualización
+                if date_key not in tasas or "paralela" not in tasas[date_key] or force_api:
+                    tasas[date_key]["paralela"] = rate_float
+                    tasas[date_key]["paralela_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    save_tasas(tasas)
             return rate_float
         return None
     except Exception as e:
         print(f"Error al obtener tipo de cambio paralelo: {e}")
+        # Si falla la API pero hay tasa guardada para hoy, usarla
+        if date_key in tasas and "paralela" in tasas[date_key]:
+            print(f"Usando tasa paralela guardada para hoy: {tasas[date_key]['paralela']}")
+            return tasas[date_key]["paralela"]
         return None
 
 def load_tasas():
@@ -176,45 +210,52 @@ def save_today_rates():
     return tasa_oficial, tasa_paralela
 
 def get_tasa_for_date(fecha=None, tipo="oficial"):
-    """Obtiene la tasa para una fecha específica. Si no existe, busca la más cercana o usa la actual"""
+    """Obtiene la tasa para una fecha específica. Si no existe, busca la más cercana o usa la actual
+    
+    IMPORTANTE: Para fechas pasadas, siempre usa la tasa guardada de ese día.
+    Para el día actual, prioriza la tasa guardada (si existe) sobre la API.
+    """
     date_key = get_date_key(fecha)
+    today_key = get_date_key()
     tasas = load_tasas()
     
-    # Si existe la tasa para esa fecha, retornarla
-    if date_key in tasas and tipo in tasas[date_key]:
-        return tasas[date_key][tipo]
-    
-    # Si no existe, buscar la más cercana hacia atrás
-    if isinstance(fecha, str):
-        try:
-            target_date = datetime.strptime(date_key, "%Y-%m-%d")
-        except:
+    # Si es una fecha pasada, buscar la tasa guardada de ese día específico
+    if date_key != today_key:
+        # Si existe la tasa para esa fecha, retornarla
+        if date_key in tasas and tipo in tasas[date_key]:
+            return tasas[date_key][tipo]
+        
+        # Si no existe, buscar la más cercana hacia atrás
+        if isinstance(fecha, str):
+            try:
+                target_date = datetime.strptime(date_key, "%Y-%m-%d")
+            except:
+                target_date = datetime.now()
+        elif isinstance(fecha, datetime):
+            target_date = fecha
+        else:
             target_date = datetime.now()
-    elif isinstance(fecha, datetime):
-        target_date = fecha
-    else:
-        target_date = datetime.now()
+        
+        # Buscar tasas anteriores (hasta 30 días atrás)
+        for i in range(30):
+            check_date = target_date - timedelta(days=i)
+            check_key = check_date.strftime("%Y-%m-%d")
+            if check_key in tasas and tipo in tasas[check_key]:
+                return tasas[check_key][tipo]
+        
+        # Si no se encuentra ninguna para fecha pasada, retornar None
+        return None
     
-    # Buscar tasas anteriores (hasta 30 días atrás)
-    for i in range(30):
-        check_date = target_date - timedelta(days=i)
-        check_key = check_date.strftime("%Y-%m-%d")
-        if check_key in tasas and tipo in tasas[check_key]:
-            return tasas[check_key][tipo]
+    # Si es el día actual:
+    # 1. Primero verificar si ya hay una tasa guardada para hoy
+    if today_key in tasas and tipo in tasas[today_key]:
+        return tasas[today_key][tipo]
     
-    # Si no se encuentra ninguna, obtener la tasa actual y guardarla
+    # 2. Si no hay tasa guardada para hoy, obtener de la API y guardarla
     if tipo == "oficial":
-        tasa_actual = get_dollar_rate()
+        tasa_actual = get_dollar_rate(save_to_file=True, force_api=False)
     else:
-        tasa_actual = get_parallel_rate()
-    
-    if tasa_actual:
-        # Guardar la tasa actual para hoy si no existe
-        today_key = get_date_key()
-        if today_key not in tasas:
-            tasas[today_key] = {}
-        tasas[today_key][tipo] = tasa_actual
-        save_tasas(tasas)
+        tasa_actual = get_parallel_rate(save_to_file=True, force_api=False)
     
     return tasa_actual
 
@@ -670,9 +711,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Intercambios (Binance/USDT):\n"
         "/binance_rate - Tasa paralela (Binance)\n"
         "/cambiar <bs> [tasa] - Intercambiar Bs a USDT\n\n"
-        "/dolar - Tipo de cambio oficial\n"
+        "/dolar [actualizar] - Tipo de cambio oficial (usa 'actualizar' para forzar actualización)\n"
         "/ai <pregunta> - Pregunta a la IA\n\n"
         f"IA: {ai_status}\n\n"
+        "💡 Sistema de Tasas Históricas:\n"
+        "El bot guarda automáticamente las tasas diarias. Para gastos de días anteriores, usa la tasa de ese día.\n"
+        "Ejemplo: 'compré algo que me costó 2000 bs el día de ayer'\n\n"
         "Categorias disponibles: comida, transporte, servicios, entretenimiento, salud, educacion, ropa, tecnologia, hogar, otros"
     )
     await update.message.reply_text(welcome_message)
@@ -1176,7 +1220,10 @@ async def exportar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def dolar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando /dolar - Muestra el tipo de cambio actual"""
-    dollar_rate = get_dollar_rate()
+    # Verificar si hay argumento para forzar actualización
+    force_update = context.args and context.args[0].lower() in ["actualizar", "update", "refresh"]
+    
+    dollar_rate = get_dollar_rate(force_api=force_update)
     
     if dollar_rate is None or dollar_rate == 0:
         await update.message.reply_text(
@@ -1184,10 +1231,27 @@ async def dolar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
     
+    date_key = get_date_key()
+    tasas = load_tasas()
+    
     message = (
         f"Tipo de cambio del dolar oficial:\n\n"
-        f"{dollar_rate:,.2f} Bs = 1 USD"
+        f"{dollar_rate:,.2f} Bs = 1 USD\n"
+        f"Fecha: {date_key}"
     )
+    
+    # Indicar si es tasa guardada o recién obtenida
+    if date_key in tasas and "oficial_timestamp" in tasas[date_key]:
+        timestamp = tasas[date_key]["oficial_timestamp"]
+        if force_update:
+            message += f"\n\n✅ Tasa actualizada desde la API"
+        else:
+            message += f"\n\n📅 Tasa guardada (obtenida: {timestamp})"
+    else:
+        message += f"\n\n✅ Tasa obtenida de la API"
+    
+    message += f"\n\n💡 Usa /dolar actualizar para forzar actualización"
+    
     await update.message.reply_text(message)
 
 async def binance_rate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
