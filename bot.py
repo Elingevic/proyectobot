@@ -61,6 +61,7 @@ GASTOS_FILE = "gastos.json"
 PRESUPUESTOS_FILE = "presupuestos.json"
 INTERCAMBIOS_FILE = "intercambios.json"
 INGRESOS_FILE = "ingresos.json"
+TASAS_FILE = "tasas.json"
 
 # Categorías disponibles
 CATEGORIAS = [
@@ -68,33 +69,154 @@ CATEGORIAS = [
     "salud", "educacion", "ropa", "tecnologia", "hogar", "otros"
 ]
 
-def get_dollar_rate():
-    """Obtiene el tipo de cambio del dólar oficial desde la API"""
+def get_dollar_rate(save_to_file=True):
+    """Obtiene el tipo de cambio del dólar oficial desde la API y lo guarda automáticamente"""
     try:
         response = requests.get("https://ve.dolarapi.com/v1/dolares/oficial", timeout=5)
         response.raise_for_status()
         data = response.json()
         rate = data.get("promedio") or data.get("venta") or data.get("compra")
         if rate:
-            return float(rate)
+            rate_float = float(rate)
+            # Guardar automáticamente la tasa del día
+            if save_to_file:
+                date_key = get_date_key()
+                tasas = load_tasas()
+                if date_key not in tasas:
+                    tasas[date_key] = {}
+                tasas[date_key]["oficial"] = rate_float
+                tasas[date_key]["oficial_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                save_tasas(tasas)
+            return rate_float
         return None
     except Exception as e:
         print(f"Error al obtener tipo de cambio: {e}")
         return None
 
-def get_parallel_rate():
-    """Obtiene el tipo de cambio paralelo (Binance/USDT) desde la API"""
+def get_parallel_rate(save_to_file=True):
+    """Obtiene el tipo de cambio paralelo (Binance/USDT) desde la API y lo guarda automáticamente"""
     try:
         response = requests.get("https://ve.dolarapi.com/v1/dolares/paralelo", timeout=5)
         response.raise_for_status()
         data = response.json()
         rate = data.get("promedio") or data.get("venta") or data.get("compra")
         if rate:
-            return float(rate)
+            rate_float = float(rate)
+            # Guardar automáticamente la tasa del día
+            if save_to_file:
+                date_key = get_date_key()
+                tasas = load_tasas()
+                if date_key not in tasas:
+                    tasas[date_key] = {}
+                tasas[date_key]["paralela"] = rate_float
+                tasas[date_key]["paralela_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                save_tasas(tasas)
+            return rate_float
         return None
     except Exception as e:
         print(f"Error al obtener tipo de cambio paralelo: {e}")
         return None
+
+def load_tasas():
+    """Carga las tasas guardadas desde el archivo JSON"""
+    if os.path.exists(TASAS_FILE):
+        try:
+            with open(TASAS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_tasas(tasas):
+    """Guarda las tasas en el archivo JSON"""
+    with open(TASAS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(tasas, f, ensure_ascii=False, indent=2)
+
+def get_date_key(fecha=None):
+    """Obtiene la clave de fecha (YYYY-MM-DD)"""
+    if fecha is None:
+        return datetime.now().strftime("%Y-%m-%d")
+    if isinstance(fecha, datetime):
+        return fecha.strftime("%Y-%m-%d")
+    if isinstance(fecha, str):
+        # Intentar parsear diferentes formatos
+        try:
+            if len(fecha) == 10:  # YYYY-MM-DD
+                return fecha
+            elif len(fecha) == 8:  # YYYYMMDD
+                return f"{fecha[:4]}-{fecha[4:6]}-{fecha[6:8]}"
+            else:
+                parsed = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S")
+                return parsed.strftime("%Y-%m-%d")
+        except:
+            return datetime.now().strftime("%Y-%m-%d")
+    return datetime.now().strftime("%Y-%m-%d")
+
+def save_today_rates():
+    """Guarda las tasas del día actual"""
+    date_key = get_date_key()
+    tasas = load_tasas()
+    
+    # Obtener tasas actuales
+    tasa_oficial = get_dollar_rate()
+    tasa_paralela = get_parallel_rate()
+    
+    if date_key not in tasas:
+        tasas[date_key] = {}
+    
+    if tasa_oficial:
+        tasas[date_key]["oficial"] = tasa_oficial
+        tasas[date_key]["oficial_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    if tasa_paralela:
+        tasas[date_key]["paralela"] = tasa_paralela
+        tasas[date_key]["paralela_timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    save_tasas(tasas)
+    return tasa_oficial, tasa_paralela
+
+def get_tasa_for_date(fecha=None, tipo="oficial"):
+    """Obtiene la tasa para una fecha específica. Si no existe, busca la más cercana o usa la actual"""
+    date_key = get_date_key(fecha)
+    tasas = load_tasas()
+    
+    # Si existe la tasa para esa fecha, retornarla
+    if date_key in tasas and tipo in tasas[date_key]:
+        return tasas[date_key][tipo]
+    
+    # Si no existe, buscar la más cercana hacia atrás
+    if isinstance(fecha, str):
+        try:
+            target_date = datetime.strptime(date_key, "%Y-%m-%d")
+        except:
+            target_date = datetime.now()
+    elif isinstance(fecha, datetime):
+        target_date = fecha
+    else:
+        target_date = datetime.now()
+    
+    # Buscar tasas anteriores (hasta 30 días atrás)
+    for i in range(30):
+        check_date = target_date - timedelta(days=i)
+        check_key = check_date.strftime("%Y-%m-%d")
+        if check_key in tasas and tipo in tasas[check_key]:
+            return tasas[check_key][tipo]
+    
+    # Si no se encuentra ninguna, obtener la tasa actual y guardarla
+    if tipo == "oficial":
+        tasa_actual = get_dollar_rate()
+    else:
+        tasa_actual = get_parallel_rate()
+    
+    if tasa_actual:
+        # Guardar la tasa actual para hoy si no existe
+        today_key = get_date_key()
+        if today_key not in tasas:
+            tasas[today_key] = {}
+        tasas[today_key][tipo] = tasa_actual
+        save_tasas(tasas)
+    
+    return tasa_actual
 
 def load_gastos():
     """Carga los gastos desde el archivo JSON"""
@@ -262,14 +384,46 @@ def get_previous_month_key():
     last_month = datetime.now() - timedelta(days=datetime.now().day)
     return last_month.strftime("%Y-%m")
 
-def add_gasto(user_id, amount_bs, dollar_rate, categoria="otros", descripcion=""):
-    """Agrega un gasto al registro del usuario"""
+def add_gasto(user_id, amount_bs, dollar_rate=None, categoria="otros", descripcion="", fecha_gasto=None):
+    """Agrega un gasto al registro del usuario
+    
+    Args:
+        user_id: ID del usuario
+        amount_bs: Cantidad en bolívares
+        dollar_rate: Tasa de cambio (si es None, se obtiene para la fecha especificada)
+        categoria: Categoría del gasto
+        descripcion: Descripción del gasto
+        fecha_gasto: Fecha del gasto (datetime, str o None para hoy)
+    """
     gastos = load_gastos()
     
     if str(user_id) not in gastos:
         gastos[str(user_id)] = {}
     
-    month_key = get_current_month_key()
+    # Determinar la fecha del gasto
+    if fecha_gasto is None:
+        fecha_gasto = datetime.now()
+    elif isinstance(fecha_gasto, str):
+        try:
+            # Intentar parsear diferentes formatos
+            if len(fecha_gasto) == 10:  # YYYY-MM-DD
+                fecha_gasto = datetime.strptime(fecha_gasto, "%Y-%m-%d")
+            else:
+                fecha_gasto = datetime.strptime(fecha_gasto, "%Y-%m-%d %H:%M:%S")
+        except:
+            fecha_gasto = datetime.now()
+    
+    # Obtener la tasa para la fecha del gasto si no se proporcionó
+    if dollar_rate is None:
+        dollar_rate = get_tasa_for_date(fecha_gasto, tipo="oficial")
+        if dollar_rate is None or dollar_rate == 0:
+            # Si no hay tasa para esa fecha, usar la actual
+            dollar_rate = get_dollar_rate()
+            if dollar_rate is None or dollar_rate == 0:
+                raise ValueError("No se pudo obtener el tipo de cambio")
+    
+    # Determinar el mes del gasto
+    month_key = fecha_gasto.strftime("%Y-%m")
     if month_key not in gastos[str(user_id)]:
         gastos[str(user_id)][month_key] = []
     
@@ -277,7 +431,7 @@ def add_gasto(user_id, amount_bs, dollar_rate, categoria="otros", descripcion=""
     gasto_id = str(uuid.uuid4())[:8]
     gasto = {
         "id": gasto_id,
-        "fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "fecha": fecha_gasto.strftime("%Y-%m-%d %H:%M:%S"),
         "bolivares": amount_bs,
         "dolares": round(amount_usd, 2),
         "tipo_cambio": dollar_rate,
@@ -524,13 +678,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(welcome_message)
 
 async def gasto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Comando /gasto - Registra un gasto"""
+    """Comando /gasto - Registra un gasto (puede incluir fecha)"""
+    import re
     if not context.args:
         await update.message.reply_text(
             "Por favor, indica la cantidad en bolivares.\n"
             "Ejemplo: /gasto 22000\n"
             "Ejemplo con categoria: /gasto 22000 comida\n"
-            "Ejemplo completo: /gasto 22000 comida almuerzo"
+            "Ejemplo completo: /gasto 22000 comida almuerzo\n"
+            "Ejemplo con fecha: /gasto 22000 comida ayer\n"
+            "Ejemplo con fecha específica: /gasto 22000 comida 2025-11-18"
         )
         return
     
@@ -543,16 +700,37 @@ async def gasto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         
         categoria = "otros"
         descripcion = ""
+        fecha_gasto = None
         
-        if len(context.args) > 1:
-            if context.args[1].lower() in CATEGORIAS:
-                categoria = context.args[1].lower()
-                if len(context.args) > 2:
-                    descripcion = " ".join(context.args[2:])
+        # Detectar fecha en los argumentos
+        args_text = " ".join(context.args).lower()
+        fecha_detectada = detect_fecha_in_text(" ".join(context.args))
+        if fecha_detectada:
+            fecha_gasto = fecha_detectada
+        
+        # Procesar argumentos restantes
+        args_processed = context.args[1:]
+        if fecha_gasto:
+            # Remover indicadores de fecha de los argumentos
+            args_processed = [arg for arg in args_processed 
+                            if arg.lower() not in ["ayer", "hoy", "anteayer"] 
+                            and not re.match(r'\d{4}-\d{2}-\d{2}', arg)
+                            and not re.match(r'\d{1,2}[/-]\d{1,2}', arg)]
+        
+        if len(args_processed) > 0:
+            if args_processed[0].lower() in CATEGORIAS:
+                categoria = args_processed[0].lower()
+                if len(args_processed) > 1:
+                    descripcion = " ".join(args_processed[1:])
             else:
-                descripcion = " ".join(context.args[1:])
+                descripcion = " ".join(args_processed)
         
-        dollar_rate = get_dollar_rate()
+        # Si no se detectó fecha, usar hoy
+        if fecha_gasto is None:
+            fecha_gasto = datetime.now()
+        
+        # Obtener la tasa para la fecha del gasto
+        dollar_rate = get_tasa_for_date(fecha_gasto, tipo="oficial")
         if dollar_rate is None or dollar_rate == 0:
             await update.message.reply_text(
                 "Error al obtener el tipo de cambio. Intenta mas tarde."
@@ -564,14 +742,21 @@ async def gasto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             amount_bs, 
             dollar_rate, 
             categoria, 
-            descripcion
+            descripcion,
+            fecha_gasto
         )
+        
+        fecha_str = fecha_gasto.strftime("%Y-%m-%d")
+        fecha_info = ""
+        if fecha_gasto.date() != datetime.now().date():
+            fecha_info = f"Fecha: {fecha_str}\n"
         
         message = (
             f"Gasto registrado (ID: {gasto_id})\n\n"
+            f"{fecha_info}"
             f"{amount_bs:,.2f} Bs\n"
             f"${amount_usd:,.2f} USD\n"
-            f"Tipo de cambio: {dollar_rate:,.2f} Bs/$\n"
+            f"Tipo de cambio ({fecha_str}): {dollar_rate:,.2f} Bs/$\n"
             f"Categoria: {categoria}\n"
         )
         if descripcion:
@@ -579,10 +764,11 @@ async def gasto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         
         await update.message.reply_text(message)
         
-    except ValueError:
+    except ValueError as e:
         await update.message.reply_text(
-            "Por favor, ingresa un numero valido.\n"
-            "Ejemplo: /gasto 22000"
+            f"Por favor, ingresa un numero valido.\n"
+            f"Ejemplo: /gasto 22000\n"
+            f"Error: {str(e)}"
         )
 
 async def listar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1322,6 +1508,73 @@ async def ask_gemini(prompt, dollar_rate=None, user_id=None):
         traceback.print_exc()
         return None
 
+def detect_fecha_in_text(text):
+    """Detecta fechas en el texto (ayer, hoy, fechas específicas)"""
+    text_lower = text.lower()
+    fecha_detectada = None
+    
+    # Detectar "ayer"
+    if "ayer" in text_lower:
+        fecha_detectada = datetime.now() - timedelta(days=1)
+        return fecha_detectada
+    
+    # Detectar "hoy" (aunque es el default, lo marcamos explícitamente)
+    if "hoy" in text_lower:
+        fecha_detectada = datetime.now()
+        return fecha_detectada
+    
+    # Detectar "anteayer" o "hace 2 días"
+    if "anteayer" in text_lower or "hace 2 días" in text_lower or "hace 2 dias" in text_lower:
+        fecha_detectada = datetime.now() - timedelta(days=2)
+        return fecha_detectada
+    
+    # Detectar "hace X días"
+    import re
+    match = re.search(r'hace\s+(\d+)\s+d[ií]as?', text_lower)
+    if match:
+        dias = int(match.group(1))
+        fecha_detectada = datetime.now() - timedelta(days=dias)
+        return fecha_detectada
+    
+    # Detectar fechas en formato YYYY-MM-DD o DD/MM/YYYY o DD-MM-YYYY
+    # Formato YYYY-MM-DD
+    match = re.search(r'(\d{4})-(\d{2})-(\d{2})', text)
+    if match:
+        try:
+            fecha_detectada = datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+            return fecha_detectada
+        except:
+            pass
+    
+    # Formato DD/MM/YYYY o DD-MM-YYYY
+    match = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', text)
+    if match:
+        try:
+            dia = int(match.group(1))
+            mes = int(match.group(2))
+            año = int(match.group(3))
+            fecha_detectada = datetime(año, mes, dia)
+            return fecha_detectada
+        except:
+            pass
+    
+    # Formato DD/MM o DD-MM (asumir año actual)
+    match = re.search(r'(\d{1,2})[/-](\d{1,2})(?!\d)', text)
+    if match:
+        try:
+            dia = int(match.group(1))
+            mes = int(match.group(2))
+            año = datetime.now().year
+            fecha_detectada = datetime(año, mes, dia)
+            # Si la fecha es en el futuro, asumir año anterior
+            if fecha_detectada > datetime.now():
+                fecha_detectada = datetime(año - 1, mes, dia)
+            return fecha_detectada
+        except:
+            pass
+    
+    return None
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Maneja mensajes de texto que no son comandos"""
     text = update.message.text.lower()
@@ -1429,17 +1682,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 pass
     
     # Detectar gasto(s) - puede haber múltiples gastos en un mensaje
-    if "gast" in text or "gasté" in text or "gaste" in text:
+    if "gast" in text or "gasté" in text or "gaste" in text or "compré" in text or "compre" in text:
+        # Detectar fecha en el mensaje
+        fecha_gasto = detect_fecha_in_text(original_text)
+        
+        # Si no se detectó fecha, usar hoy
+        if fecha_gasto is None:
+            fecha_gasto = datetime.now()
+        
         # Buscar todos los números en el mensaje
         numbers = re.findall(r'\d+[.,]?\d*', text)
         if numbers:
             try:
-                dollar_rate = get_dollar_rate()
+                # Obtener la tasa para la fecha del gasto
+                dollar_rate = get_tasa_for_date(fecha_gasto, tipo="oficial")
                 if not dollar_rate or dollar_rate == 0:
-                    await update.message.reply_text(
-                        "Error al obtener el tipo de cambio. Intenta mas tarde."
-                    )
-                    return
+                    # Si no hay tasa para esa fecha, intentar obtener la actual
+                    dollar_rate = get_dollar_rate()
+                    if not dollar_rate or dollar_rate == 0:
+                        await update.message.reply_text(
+                            "Error al obtener el tipo de cambio. Intenta mas tarde."
+                        )
+                        return
                 
                 # Detectar múltiples gastos
                 # Patrón: número seguido de "bs" o contexto de gasto
@@ -1531,7 +1795,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                             amount_bs,
                             dollar_rate,
                             categoria,
-                            descripcion
+                            descripcion,
+                            fecha_gasto
                         )
                         
                         total_bs += amount_bs
@@ -1545,21 +1810,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         mensajes_gastos.append(msg_gasto)
                     
                     # Mensaje de confirmación
+                    fecha_str = fecha_gasto.strftime("%Y-%m-%d")
+                    if fecha_gasto.date() != datetime.now().date():
+                        fecha_info = f"Fecha: {fecha_str}\n"
+                    else:
+                        fecha_info = ""
+                    
                     if len(gastos_detectados) == 1:
                         message = (
                             f"Gasto registrado:\n\n"
+                            f"{fecha_info}"
                             f"{mensajes_gastos[0]}\n"
-                            f"Tipo de cambio: {dollar_rate:,.2f} Bs/$\n"
+                            f"Tipo de cambio ({fecha_str}): {dollar_rate:,.2f} Bs/$\n"
                         )
                     else:
                         message = (
                             f"{len(gastos_detectados)} gastos registrados:\n\n"
+                            f"{fecha_info}"
                         )
                         for i, msg in enumerate(mensajes_gastos, 1):
                             message += f"{i}. {msg}\n"
                         message += (
                             f"\nTotal: {total_bs:,.2f} Bs (${total_usd:,.2f} USD)\n"
-                            f"Tipo de cambio: {dollar_rate:,.2f} Bs/$\n"
+                            f"Tipo de cambio ({fecha_str}): {dollar_rate:,.2f} Bs/$\n"
                         )
                     
                     saldo_bs, saldo_usdt, _, _ = get_saldo_disponible(update.effective_user.id)
@@ -1701,4 +1974,11 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 if __name__ == "__main__":
     print("Bot iniciado...")
+    # Guardar tasas del día actual al iniciar
+    print("Guardando tasas del día actual...")
+    try:
+        save_today_rates()
+        print("Tasas del día guardadas correctamente")
+    except Exception as e:
+        print(f"Error al guardar tasas iniciales: {e}")
     app.run_polling()

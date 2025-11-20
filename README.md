@@ -16,6 +16,8 @@ Bot de Telegram desarrollado en Python para llevar control de gastos personales 
 - ✅ Integración con Gemini AI para consultas inteligentes
 - ✅ Detección automática de múltiples gastos en un mensaje
 - ✅ Registro de saldo disponible (ingreso - gastos - intercambios)
+- ✅ Guardado automático de tasas diarias (oficial y paralela)
+- ✅ Registro de gastos con fecha pasada usando la tasa del día correspondiente
 
 ## Requisitos
 
@@ -67,6 +69,9 @@ python bot.py
 ```
 /gasto 22000 comida almuerzo
 gasté 50bs en el pasaje, 100 en una galleta
+compré algo que me costó 2000 bs el día de ayer
+/gasto 15000 transporte ayer
+/gasto 10000 comida 2025-11-18
 ```
 
 ### Registrar ingreso mensual
@@ -100,12 +105,15 @@ El bot utiliza la API de [dolarapi.com](https://dolarapi.com) para obtener:
 - `gastos.json` - Base de datos de gastos (generado automáticamente)
 - `intercambios.json` - Base de datos de intercambios (generado automáticamente)
 - `ingresos.json` - Base de datos de ingresos (generado automáticamente)
+- `tasas.json` - Base de datos de tasas diarias (generado automáticamente)
+- `presupuestos.json` - Base de datos de presupuestos (generado automáticamente)
 
 ## Notas
 
 - Los archivos `.json` contienen información personal y no deben compartirse
 - El archivo `.env` contiene credenciales sensibles y no debe subirse al repositorio
 - El bot diferencia entre **gastos** (consumo) e **intercambios** (compra de divisa)
+- **Sistema de tasas históricas**: El bot guarda automáticamente las tasas diarias (oficial y paralela). Cuando registras un gasto de un día anterior (usando "ayer", "anteayer", o una fecha específica), el bot usa automáticamente la tasa de ese día para calcular el equivalente en USD de forma precisa.
 
 ## Despliegue en VPS
 

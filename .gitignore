@@ -7,6 +7,7 @@ gastos.json
 intercambios.json
 ingresos.json
 presupuestos.json
+tasas.json
 binance.json
 usdt_balance.json
 *.json
