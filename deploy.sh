@@ -40,9 +40,15 @@ else
     git clone https://github.com/Elingevic/proyectobot.git .
 fi
 
-# Instalar dependencias
+# Crear entorno virtual (para evitar problemas con externally-managed-environment)
+echo "🐍 Creando entorno virtual..."
+python3 -m venv venv
+
+# Instalar dependencias en el entorno virtual
 echo "📦 Instalando dependencias de Python..."
-pip3 install -r requirements.txt
+source venv/bin/activate
+pip install -r requirements.txt
+deactivate
 
 # Verificar archivo .env
 if [ ! -f ".env" ]; then
@@ -67,7 +73,7 @@ Type=simple
 User=$USER
 WorkingDirectory=$BOT_DIR
 Environment="PATH=/usr/bin:/usr/local/bin"
-ExecStart=/usr/bin/python3 $BOT_DIR/bot.py
+ExecStart=$BOT_DIR/venv/bin/python3 $BOT_DIR/bot.py
 Restart=always
 RestartSec=10
 

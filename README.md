@@ -126,9 +126,19 @@ cd telegram-bot
 git clone https://github.com/Elingevic/proyectobot.git .
 ```
 
-2. Instalar dependencias:
+2. Instalar dependencias (usando entorno virtual para evitar problemas con externally-managed-environment):
 ```bash
-pip3 install -r requirements.txt
+# Crear entorno virtual
+python3 -m venv venv
+
+# Activar entorno virtual
+source venv/bin/activate
+
+# Instalar dependencias
+pip install -r requirements.txt
+
+# Desactivar entorno virtual (opcional, solo para probar)
+deactivate
 ```
 
 3. Crear archivo `.env`:
@@ -141,7 +151,11 @@ nano .env
 
 4. Ejecutar el bot (prueba):
 ```bash
-python3 bot.py
+# Activar entorno virtual y ejecutar
+source venv/bin/activate
+python bot.py
+# Presiona Ctrl+C para detener
+deactivate
 ```
 
 5. Configurar como servicio systemd (para que se ejecute automáticamente):
@@ -159,7 +173,7 @@ After=network.target
 Type=simple
 User=tu_usuario
 WorkingDirectory=/opt/telegram-bot
-ExecStart=/usr/bin/python3 /opt/telegram-bot/bot.py
+ExecStart=/opt/telegram-bot/venv/bin/python3 /opt/telegram-bot/bot.py
 Restart=always
 RestartSec=10
 
