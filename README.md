@@ -33,7 +33,7 @@ cd proyectobot
 
 2. Instalar dependencias:
 ```bash
-pip install python-telegram-bot python-dotenv google-generativeai requests
+pip install -r requirements.txt
 ```
 
 3. Crear archivo `.env` en la raíz del proyecto:
@@ -106,6 +106,81 @@ El bot utiliza la API de [dolarapi.com](https://dolarapi.com) para obtener:
 - Los archivos `.json` contienen información personal y no deben compartirse
 - El archivo `.env` contiene credenciales sensibles y no debe subirse al repositorio
 - El bot diferencia entre **gastos** (consumo) e **intercambios** (compra de divisa)
+
+## Despliegue en VPS
+
+### Opción 1: Script automático
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
+
+### Opción 2: Manual
+
+1. Clonar el repositorio en el servidor:
+```bash
+cd /opt
+sudo mkdir telegram-bot
+sudo chown $USER:$USER telegram-bot
+cd telegram-bot
+git clone https://github.com/Elingevic/proyectobot.git .
+```
+
+2. Instalar dependencias:
+```bash
+pip3 install -r requirements.txt
+```
+
+3. Crear archivo `.env`:
+```bash
+nano .env
+# Agregar:
+# TELEGRAM_TOKEN=tu_token
+# GEMINI_API_KEY=tu_api_key
+```
+
+4. Ejecutar el bot (prueba):
+```bash
+python3 bot.py
+```
+
+5. Configurar como servicio systemd (para que se ejecute automáticamente):
+```bash
+sudo nano /etc/systemd/system/telegram-bot.service
+```
+
+Agregar:
+```ini
+[Unit]
+Description=Telegram Bot de Control de Gastos
+After=network.target
+
+[Service]
+Type=simple
+User=tu_usuario
+WorkingDirectory=/opt/telegram-bot
+ExecStart=/usr/bin/python3 /opt/telegram-bot/bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+6. Activar el servicio:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl start telegram-bot
+sudo systemctl enable telegram-bot
+sudo systemctl status telegram-bot
+```
+
+7. Ver logs:
+```bash
+sudo journalctl -u telegram-bot -f
+```
+
+**Nota:** El bot usa polling, no requiere puerto web. No hay conflicto con otros servicios que usen puertos HTTP.
 
 ## Licencia
 
