@@ -9,7 +9,14 @@ echo "🚀 Iniciando despliegue del bot de Telegram..."
 if ! command -v python3 &> /dev/null; then
     echo "❌ Python3 no está instalado. Instalando..."
     sudo apt update
-    sudo apt install -y python3 python3-pip
+    sudo apt install -y python3 python3-pip python3-venv
+fi
+
+# Verificar pip3
+if ! command -v pip3 &> /dev/null; then
+    echo "❌ pip3 no está instalado. Instalando..."
+    sudo apt update
+    sudo apt install -y python3-pip
 fi
 
 # Crear directorio para el bot (si no existe)
